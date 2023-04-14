@@ -52,8 +52,8 @@ Layout for test data
 Sequences of ground truth and test will be matched according to the `<SEQUENCE_X>`
 string.""", formatter_class=argparse.RawTextHelpFormatter)
 
-    parser.add_argument('groundtruths', type=str, help='Directory containing ground truth files.')
-    parser.add_argument('tests', type=str, help='Directory containing tracker result files')
+    # parser.add_argument('groundtruths', type=str, help='Directory containing ground truth files.')
+    # parser.add_argument('tests', type=str, help='Directory containing tracker result files')
     parser.add_argument('--loglevel', type=str, help='Log level', default='info')
     parser.add_argument('--fmt', type=str, help='Data format', default='mot15-2D')
     parser.add_argument('--solver', type=str, help='LAP solver to use for matching between frames.')
@@ -63,18 +63,22 @@ string.""", formatter_class=argparse.RawTextHelpFormatter)
     return parser.parse_args()
 
 
-def compare_dataframes(gts, ts):
+def compare_dataframes(gts, ts, iouth, distth):
     """Builds accumulator for each sequence."""
     accs = []
     names = []
+
     for k, tsacc in ts.items():
-        if k in gts:
-            logging.info('Comparing %s...', k)
-            accs.append(mm.utils.compare_to_groundtruth(gts[k], tsacc, 'iou', distth=0.5))
+        if k in gts: 
+            if iouth > 0:
+                logging.info('Comparing IoU distance...')
+                accs.append(mm.utils.compare_to_groundtruth(gts[k], tsacc, 'iou', distth=1-iouth))
+            else:
+                logging.info('Comparing Euclidean distance...')
+                accs.append(mm.utils.compare_to_groundtruth(gts[k], tsacc, 'euc', distth=distth))
             names.append(k)
         else:
             logging.warning('No ground truth for %s, skipping.', k)
-
     return accs, names
 
 
@@ -90,19 +94,27 @@ def main():
     if args.solver:
         mm.lap.default_solver = args.solver
 
-    gtfiles = glob.glob(os.path.join(args.groundtruths, '*/gt/gt.txt'))
-    tsfiles = [f for f in glob.glob(os.path.join(args.tests, '*.txt')) if not os.path.basename(f).startswith('eval')]
+    # gtfiles = glob.glob(os.path.join(args.groundtruths, '*/gt/gt.txt'))
+    # tsfiles = [f for f in glob.glob(os.path.join(args.tests, '*.txt')) if not os.path.basename(f).startswith('eval')]
+    gtfiles = ['yourdata/video1/gt/gt.txt',
+               'yourdata/video2/gt/gt.txt']
+    tsfiles = ['yourdata/video1.txt',
+               'yourdata/video2.txt',]
 
     logging.info('Found %d groundtruths and %d test files.', len(gtfiles), len(tsfiles))
     logging.info('Available LAP solvers %s', str(mm.lap.available_solvers))
     logging.info('Default LAP solver \'%s\'', mm.lap.default_solver)
     logging.info('Loading files.')
 
-    gt = OrderedDict([(Path(f).parts[-3], mm.io.loadtxt(f, fmt=args.fmt, min_confidence=1)) for f in gtfiles])
-    ts = OrderedDict([(os.path.splitext(Path(f).parts[-1])[0], mm.io.loadtxt(f, fmt=args.fmt)) for f in tsfiles])
+    gt = OrderedDict([(Path(f).parts[-3], mm.io.loadtxt(f, fmt=args.fmt, min_confidence=-1)) for f in gtfiles])
+    ts = OrderedDict([(os.path.splitext(Path(f).parts[-1])[0], mm.io.loadtxt(f, fmt=args.fmt, min_confidence=-1)) for f in tsfiles])
 
+    print(gt)
+    print(ts)
     mh = mm.metrics.create()
-    accs, names = compare_dataframes(gt, ts)
+    iou_threshold = 0.0
+    dist_threshold = 5000
+    accs, names = compare_dataframes(gt, ts, iou_threshold, dist_threshold)
 
     metrics = list(mm.metrics.motchallenge_metrics)
     if args.exclude_id:
